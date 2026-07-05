@@ -1,4 +1,5 @@
 import logging
+import os
 import re
 from typing import TYPE_CHECKING
 
@@ -257,6 +258,57 @@ class EmbyClient(JellyfinClient):
         current.update(policy_patch)
         self.set_policy(user_id, current)
 
+    @staticmethod
+    def _connect_link_enabled() -> bool:
+        """Return whether new users should be linked to Emby Connect.
+
+        Controlled by the ``WIZARR_EMBY_CONNECT_LINK`` env var. Defaults to
+        enabled for this fork; set it to ``false``/``0``/``no`` to opt out.
+        """
+        return os.getenv("WIZARR_EMBY_CONNECT_LINK", "true").lower() in (
+            "1",
+            "true",
+            "yes",
+            "on",
+        )
+
+    def link_emby_connect(self, user_id: str, email: str) -> bool:
+        """Send an Emby Connect link invite for a freshly created user.
+
+        POSTs ``/Users/{user_id}/Connect/Link?ConnectUsername={email}`` using the
+        server API key (auth is handled by :meth:`_headers`). Emby then emails the
+        Connect invite, which stays pending until the user accepts it from a
+        Connect account registered on that email.
+
+        Non-fatal by design: any failure (dead Connect service, already linked,
+        bad email) is logged and swallowed so it can never break onboarding.
+
+        Returns:
+            bool: True if Emby accepted the link request, False otherwise.
+        """
+        if not email:
+            log.warning("emby.connect_link.skipped_no_email", user_id=user_id)
+            return False
+        try:
+            # Match the proven-working call style in this client: no ``/emby``
+            # prefix, auth via ``self._headers`` (X-Emby-Token / MediaBrowser).
+            self.post(
+                f"/Users/{user_id}/Connect/Link",
+                params={"ConnectUsername": email},
+            )
+            log.info("emby.connect_link.sent", user_id=user_id, email=email)
+            return True
+        except Exception as exc:
+            status = getattr(getattr(exc, "response", None), "status_code", None)
+            log.warning(
+                "emby.connect_link.failed",
+                user_id=user_id,
+                email=email,
+                status=status,
+                error=str(exc),
+            )
+            return False
+
     def join(
         self, username: str, password: str, confirm: str, email: str, code: str
     ) -> tuple[bool, str]:
@@ -316,5 +368,10 @@ class EmbyClient(JellyfinClient):
                 f"Failed to set Emby download/live TV/mobile uploads permissions for user {username}: {e!s}"
             )
             # Don't fail the join process for this
+
+        # Link the new account to Emby Connect using the signup email. Best-effort
+        # and never blocks onboarding (see link_emby_connect for guarantees).
+        if self._connect_link_enabled():
+            self.link_emby_connect(user.token, email)
 
         return success, message

@@ -515,6 +515,16 @@ def user_detail(db_id: int):
             else:
                 user.expires = None
 
+        # Update email only if present in form
+        if "email" in request.form:
+            raw_email = request.form.get("email", "").strip()
+            if not raw_email or raw_email.lower() == "empty":
+                user.email = None
+            elif EMAIL_RE.fullmatch(raw_email):
+                user.email = raw_email
+            else:
+                return Response("Invalid email address", status=400)
+
         # Update notes only if present in form
         if "notes" in request.form:
             user.notes = request.form.get("notes", "")

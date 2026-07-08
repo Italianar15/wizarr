@@ -51,7 +51,7 @@
                       </button>
                     {% endif %}
                   </div>
-                  <p class="text-sm text-muted-foreground dark:text-gray-400 truncate">{{ user.email or _("Home User") }}</p>
+                  <p class="text-sm text-muted-foreground dark:text-gray-400 truncate">{{ user.email if user.email and user.email != "empty" else _("Home User") }}</p>
                 </div>
               </div>
               <!-- Status Badges -->

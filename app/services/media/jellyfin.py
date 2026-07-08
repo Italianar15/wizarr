@@ -404,7 +404,8 @@ class JellyfinClient(RestApiMixin):
     def _sync_user_permissions(self, user: User, jf_user: dict) -> None:
         """Sync permissions and library access from Jellyfin to database user."""
         user.username = jf_user.get("Name", user.username)
-        user.email = jf_user.get("Email", user.email)
+        if jf_email := jf_user.get("Email"):
+            user.email = jf_email
 
         # Store permissions in SQL columns
         perms = self._extract_jellyfin_permissions(jf_user)

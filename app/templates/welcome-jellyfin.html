@@ -57,10 +57,10 @@
       <!-- Main Card Container -->
       <div class="w-full {{ 'max-w-lg' if show_form_on_load else 'max-w-md' }} transition-all duration-700 ease-out"
            id="main-container">
-        <div class="relative bg-white/90 dark:bg-gray-800/40 backdrop-blur-xl rounded-2xl shadow-xl dark:shadow-2xl border border-gray-200 dark:border-gray-700/50 transition-all duration-700 ease-out {{ 'h-auto min-h-[520px] md:h-[520px]' if show_form_on_load else 'h-[400px]' }}"
+        <div class="relative bg-white/90 dark:bg-gray-800/40 backdrop-blur-xl rounded-2xl shadow-xl dark:shadow-2xl border border-gray-200 dark:border-gray-700/50 transition-all duration-700 ease-out {{ 'h-auto min-h-[520px]' if show_form_on_load else 'h-[400px]' }}"
              id="card-container"
              style="overflow: {{ 'visible' if show_form_on_load else 'hidden' }}">
-          <!-- Welcome Screen -->
+          <!-- Welcome Screen (form path sizes to content via classes above) -->
           <div class="p-8 space-y-6 transition-all duration-500 ease-out {{ 'hidden' if show_form_on_load else '' }}"
                id="welcome-screen">
             <div class="text-center">
@@ -491,16 +491,17 @@
               formScreen.style.pointerEvents = 'auto';
               welcomeScreen.style.display = 'none';
               mainContainer.style.maxWidth = isMobile ? '100%' : '32rem';
-              cardContainer.style.height = isMobile ? 'auto' : '520px';
-              cardContainer.style.minHeight = isMobile ? `${formScreen.scrollHeight + 48}px` : '';
-              cardContainer.style.overflow = isMobile ? 'visible' : 'hidden';
+              // Size the card to the form's content so the submit button is never clipped
+              formScreen.style.position = 'relative';
+              formScreen.style.height = 'auto';
+              formScreen.style.overflow = 'visible';
+              cardContainer.style.height = 'auto';
+              cardContainer.style.minHeight = `${formScreen.scrollHeight + 48}px`;
+              cardContainer.style.overflow = 'visible';
               if (isMobile) {
                   layoutWrapper.style.justifyContent = 'flex-start';
                   layoutWrapper.style.paddingTop = '3rem';
                   layoutWrapper.style.paddingBottom = '2rem';
-                  formScreen.style.position = 'relative';
-                  formScreen.style.height = 'auto';
-                  formScreen.style.overflow = 'visible';
               }
               const formFields = formScreen.querySelectorAll('.form-field');
               formFields.forEach(field => {
@@ -523,7 +524,7 @@
                   }
 
                   const isMobile = window.innerWidth < 768;
-                  let mobileCardHeight = null;
+                  let targetCardHeight = null;
 
                   // Mobile: Hide header and footer when form appears
                   if (isMobile) {
@@ -546,9 +547,8 @@
                   formScreen.style.opacity = '0';
                   formScreen.style.pointerEvents = 'none';
 
-                  if (isMobile) {
-                      mobileCardHeight = Math.max(formScreen.scrollHeight + 48, cardContainer.offsetHeight);
-                  }
+                  // Measure the card height needed to fit the whole form (all viewports)
+                  targetCardHeight = Math.max(formScreen.scrollHeight + 48, cardContainer.offsetHeight);
 
                   // Step 2: Create timeline animation with Anime.js
                   const timeline = anime.timeline({
@@ -567,7 +567,7 @@
                   // Container height expansion
                   timeline.add({
                       targets: cardContainer,
-                      height: isMobile ? `${mobileCardHeight}px` : '520px',
+                      height: `${targetCardHeight}px`,
                       duration: 800,
                       easing: 'cubicBezier(0.25, 0.46, 0.45, 0.94)'
                   }, 0);
@@ -615,14 +615,16 @@
                           if (firstInput) firstInput.focus();
                       }, formFields.length * 80 + 150);
 
-                      if (isMobile) {
-                          cardContainer.style.height = 'auto';
-                          cardContainer.style.minHeight = `${mobileCardHeight}px`;
-                          cardContainer.style.overflow = 'visible';
-                          formScreen.style.position = 'relative';
-                          formScreen.style.height = 'auto';
-                          formScreen.style.overflow = 'visible';
+                      // Let the card grow to its content so the submit button is
+                      // always reachable, regardless of viewport or field count.
+                      cardContainer.style.height = 'auto';
+                      cardContainer.style.minHeight = `${targetCardHeight}px`;
+                      cardContainer.style.overflow = 'visible';
+                      formScreen.style.position = 'relative';
+                      formScreen.style.height = 'auto';
+                      formScreen.style.overflow = 'visible';
 
+                      if (isMobile) {
                           requestAnimationFrame(() => {
                               cardContainer.scrollIntoView({
                                   behavior: 'smooth',

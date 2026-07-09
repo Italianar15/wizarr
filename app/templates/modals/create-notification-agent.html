@@ -150,6 +150,30 @@
                     {{ _("Update Available") }}
                   </label>
                 </div>
+                <div class="flex items-center">
+                  <input type="checkbox"
+                         name="event_admin_login_success"
+                         id="event_admin_login_success"
+                         value="admin_login_success"
+                         checked
+                         class="w-4 h-4 text-primary bg-gray-100 border-gray-300 rounded focus:ring-primary dark:focus:ring-primary dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600">
+                  <label for="event_admin_login_success"
+                         class="ml-2 text-sm font-medium text-gray-900 dark:text-gray-300">
+                    {{ _("Admin Login") }}
+                  </label>
+                </div>
+                <div class="flex items-center">
+                  <input type="checkbox"
+                         name="event_admin_login_failed"
+                         id="event_admin_login_failed"
+                         value="admin_login_failed"
+                         checked
+                         class="w-4 h-4 text-primary bg-gray-100 border-gray-300 rounded focus:ring-primary dark:focus:ring-primary dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600">
+                  <label for="event_admin_login_failed"
+                         class="ml-2 text-sm font-medium text-gray-900 dark:text-gray-300">
+                    {{ _("Failed Admin Login Attempt") }}
+                  </label>
+                </div>
               </div>
             </div>
             <div class="bg-gray-50 px-4 py-3 sm:flex sm:flex-row-reverse sm:px-6 dark:bg-gray-800">

@@ -39,6 +39,10 @@ def create():
             events.append("user_joined")
         if request.form.get("event_update_available"):
             events.append("update_available")
+        if request.form.get("event_admin_login_success"):
+            events.append("admin_login_success")
+        if request.form.get("event_admin_login_failed"):
+            events.append("admin_login_failed")
 
         form = {
             "name": request.form.get("name"),
@@ -51,7 +55,7 @@ def create():
             "telegram_chat_id": request.form.get("telegram_chat_id") or None,
             "notification_events": ",".join(events)
             if events
-            else "user_joined,update_available",
+            else "user_joined,update_available,admin_login_success,admin_login_failed",
         }
 
         # test the connection
@@ -134,6 +138,10 @@ def edit(agent_id):
             events.append("user_joined")
         if request.form.get("event_update_available"):
             events.append("update_available")
+        if request.form.get("event_admin_login_success"):
+            events.append("admin_login_success")
+        if request.form.get("event_admin_login_failed"):
+            events.append("admin_login_failed")
 
         form = {
             "name": request.form.get("name"),
@@ -146,7 +154,7 @@ def edit(agent_id):
             "telegram_chat_id": request.form.get("telegram_chat_id") or None,
             "notification_events": ",".join(events)
             if events
-            else "user_joined,update_available",
+            else "user_joined,update_available,admin_login_success,admin_login_failed",
         }
 
         # test the connection

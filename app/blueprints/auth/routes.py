@@ -8,8 +8,19 @@ from werkzeug.security import check_password_hash
 
 from app.extensions import db, limiter
 from app.models import AdminAccount, AdminUser, Settings
+from app.services.notifications import notify
 
 auth_bp = Blueprint("auth", __name__)
+
+
+def _client_ip() -> str:
+    """Resolve the client IP, preferring Cloudflare's header, then X-Forwarded-For."""
+    return (
+        request.headers.get("CF-Connecting-IP")
+        or (request.headers.get("X-Forwarded-For") or request.remote_addr or "")
+        .split(",")[0]
+        .strip()
+    )
 
 
 @auth_bp.route("/login", methods=["GET", "POST"])
@@ -48,8 +59,20 @@ def login():
 
         success, message = handle_ldap_login(username, password)
         if success:
+            notify(
+                "Admin Login",
+                f"Admin '{username}' logged in via LDAP from {_client_ip()}",
+                tags="closed_lock_with_key",
+                event_type="admin_login_success",
+            )
             return redirect("/")
 
+        notify(
+            "Failed Admin Login",
+            f"Failed LDAP login attempt for '{username}' from {_client_ip()}",
+            tags="rotating_light",
+            event_type="admin_login_failed",
+        )
         return render_template(
             "login.html",
             error=message,
@@ -76,6 +99,12 @@ def login():
                 "login.html", show_2fa=True, username=username, has_passkeys=True
             )
         # No passkeys, allow direct login
+        notify(
+            "Admin Login",
+            f"Admin '{username}' logged in from {_client_ip()}",
+            tags="closed_lock_with_key",
+            event_type="admin_login_success",
+        )
         login_user(account, remember=bool(request.form.get("remember")))
         return redirect("/")
 
@@ -93,19 +122,25 @@ def login():
         and check_password_hash(admin_password_hash, password)
     ):
         # Legacy single-admin (Settings table)
+        notify(
+            "Admin Login",
+            f"Admin '{username}' logged in from {_client_ip()}",
+            tags="closed_lock_with_key",
+            event_type="admin_login_success",
+        )
         login_user(AdminUser(), remember=bool(request.form.get("remember")))
         return redirect("/")
 
-    # Get IP address: prefer Cloudflare's header, then X-Forwarded-For, then remote_addr
-    client_ip = (
-        request.headers.get("CF-Connecting-IP")
-        or (request.headers.get("X-Forwarded-For") or request.remote_addr or "")
-        .split(",")[0]
-        .strip()
-    )
+    client_ip = _client_ip()
 
     # Log failed login with IP
     logging.warning(f"AUTH FAIL: Failed login for user '{username}' from {client_ip}")
+    notify(
+        "Failed Admin Login",
+        f"Failed login attempt for '{username}' from {client_ip}",
+        tags="rotating_light",
+        event_type="admin_login_failed",
+    )
 
     return render_template(
         "login.html",
@@ -155,6 +190,12 @@ def complete_2fa():
     session.pop("pending_2fa_user_id", None)
     session.pop("pending_2fa_remember", None)
 
+    notify(
+        "Admin Login",
+        f"Admin '{account.username}' logged in from {_client_ip()}",
+        tags="closed_lock_with_key",
+        event_type="admin_login_success",
+    )
     login_user(account, remember=remember)
     return redirect("/")
 

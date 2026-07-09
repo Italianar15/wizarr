@@ -8,19 +8,10 @@ from werkzeug.security import check_password_hash
 
 from app.extensions import db, limiter
 from app.models import AdminAccount, AdminUser, Settings
+from app.services.notifications import client_ip as _client_ip
 from app.services.notifications import notify
 
 auth_bp = Blueprint("auth", __name__)
-
-
-def _client_ip() -> str:
-    """Resolve the client IP, preferring Cloudflare's header, then X-Forwarded-For."""
-    return (
-        request.headers.get("CF-Connecting-IP")
-        or (request.headers.get("X-Forwarded-For") or request.remote_addr or "")
-        .split(",")[0]
-        .strip()
-    )
 
 
 @auth_bp.route("/login", methods=["GET", "POST"])

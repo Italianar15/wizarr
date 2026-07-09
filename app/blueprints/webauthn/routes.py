@@ -30,6 +30,7 @@ from webauthn.helpers.structs import (
 
 from app.extensions import db, limiter
 from app.models import AdminAccount, WebAuthnCredential
+from app.services.notifications import client_ip, notify
 
 webauthn_bp = Blueprint("webauthn", __name__)
 
@@ -333,6 +334,11 @@ def authenticate_complete():
     if not challenge:
         return jsonify({"error": "No authentication in progress"}), 400
 
+    # Tracks whichever account we've matched so far, so the failure handler
+    # below can report who the attempt was for (or "unknown" if we never
+    # got that far - e.g. a forged/unrecognized credential ID).
+    admin_account = None
+
     try:
         credential = parse_authentication_credential_json(credential_data["credential"])
 
@@ -342,7 +348,15 @@ def authenticate_complete():
         ).first()
 
         if not db_credential:
+            notify(
+                "Failed Admin Login",
+                f"Failed passkey login attempt (unrecognized credential) from {client_ip()}",
+                tags="rotating_light",
+                event_type="admin_login_failed",
+            )
             return jsonify({"error": "Credential not found"}), 404
+
+        admin_account = db_credential.admin_account
 
         # Check if this is 2FA authentication
         pending_2fa_user_id = session.get("pending_2fa_user_id")
@@ -352,12 +366,16 @@ def authenticate_complete():
             and db_credential.admin_account_id != pending_2fa_user_id
         ):
             # 2FA mode - verify the credential belongs to the pending user
+            notify(
+                "Failed Admin Login",
+                f"Failed 2FA passkey attempt for '{admin_account.username}' "
+                f"(wrong passkey for pending session) from {client_ip()}",
+                tags="rotating_light",
+                event_type="admin_login_failed",
+            )
             return jsonify(
                 {"error": "Credential does not belong to authenticated user"}
             ), 403
-
-        # Get the admin account associated with this credential
-        admin_account = db_credential.admin_account
 
         try:
             rp_id, _, origin = get_rp_config()
@@ -382,15 +400,29 @@ def authenticate_complete():
         session.pop("webauthn_challenge", None)
 
         if pending_2fa_user_id:
-            # 2FA mode - complete the authentication via the auth route
+            # 2FA mode - complete the authentication via the auth route,
+            # which fires the admin_login_success notification itself.
             return jsonify({"verified": True, "redirect": url_for("auth.complete_2fa")})
         # Usernameless mode - login directly
         from flask_login import login_user
 
+        notify(
+            "Admin Login",
+            f"Admin '{admin_account.username}' logged in via passkey from {client_ip()}",
+            tags="closed_lock_with_key",
+            event_type="admin_login_success",
+        )
         login_user(admin_account, remember=True)
         return jsonify({"verified": True, "redirect": url_for("admin.dashboard")})
 
     except Exception:
+        who = admin_account.username if admin_account else "unknown"
+        notify(
+            "Failed Admin Login",
+            f"Failed passkey login attempt for '{who}' from {client_ip()}",
+            tags="rotating_light",
+            event_type="admin_login_failed",
+        )
         return jsonify({"error": "Authentication failed"}), 400
 
 

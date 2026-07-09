@@ -5,10 +5,21 @@ from typing import Any
 
 import apprise
 import requests
+from flask import request
 
 from app.models import Notification
 
-__all__ = ["notify"]
+__all__ = ["client_ip", "notify"]
+
+
+def client_ip() -> str:
+    """Resolve the client IP, preferring Cloudflare's header, then X-Forwarded-For."""
+    return (
+        request.headers.get("CF-Connecting-IP")
+        or (request.headers.get("X-Forwarded-For") or request.remote_addr or "")
+        .split(",")[0]
+        .strip()
+    )
 
 
 def _send(url: str, data, headers: dict) -> bool:

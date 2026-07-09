@@ -624,14 +624,20 @@ class JellyfinClient(RestApiMixin):
             db.session.rollback()
             return False, "An unexpected error occurred."
 
-    def link_existing_account(self, username: str, code: str) -> tuple[bool, str]:
+    def link_existing_account(
+        self, username: str, password: str, code: str
+    ) -> tuple[bool, str]:
         """Attach this invitation's permissions to an account that already
         exists on the media server, instead of creating a duplicate one.
 
-        Looks the username up directly against the server's own user list
-        (not just Wizarr's database), so an invitee who already has an
-        account predating Wizarr can be granted this invite's library
-        access without a second, duplicate account being created.
+        Authenticates username+password directly against the media server's
+        own ``/Users/AuthenticateByName`` endpoint before touching anything -
+        this is the same call the official apps use to log in, and it's the
+        only thing that proves the invitee actually controls the account
+        they're claiming. Do not weaken this to a plain username lookup:
+        without a password check, anyone could type another person's
+        username and have this invite's library/permission grants (and an
+        expiry date) applied to that stranger's account.
         """
         ok, msg = is_invite_valid(code)
         if not ok:
@@ -640,20 +646,45 @@ class JellyfinClient(RestApiMixin):
         server_id = getattr(self, "server_id", None)
 
         try:
-            remote_users = self.get("/Users").json()
+            # AuthenticateByName is the pre-auth login endpoint - it needs
+            # client-identification (Client/Device/DeviceId/Version), not just
+            # our stored admin token, or Jellyfin rejects it with a 400.
+            auth_response = self.post(
+                "/Users/AuthenticateByName",
+                json={"Username": username, "Pw": password},
+                headers={
+                    "X-Emby-Authorization": (
+                        'MediaBrowser Client="Wizarr", Device="Wizarr", '
+                        'DeviceId="wizarr-server", Version="1.0.0"'
+                    )
+                },
+            )
+        except requests.exceptions.HTTPError as exc:
+            status = exc.response.status_code if exc.response is not None else None
+            if status == 401:
+                return False, "Incorrect username or password."
+            logging.error(
+                "Jellyfin: AuthenticateByName failed with status %s", status
+            )
+            return False, "Could not verify your account. Please try again."
         except Exception:
-            logging.error("Jellyfin: failed to list users for account linking", exc_info=True)
-            return False, "Could not reach the media server to look up your account."
+            logging.error(
+                "Jellyfin: AuthenticateByName request failed", exc_info=True
+            )
+            return False, "Could not verify your account. Please try again."
 
-        needle = username.strip().lower()
-        match = next(
-            (u for u in remote_users if (u.get("Name") or "").lower() == needle),
-            None,
-        )
-        if not match:
-            return False, f"No account named '{username}' was found on this server."
+        try:
+            auth_data = auth_response.json()
+            user_id = auth_data["User"]["Id"]
+            matched_name = auth_data["User"].get("Name", username)
+            matched_email = auth_data["User"].get("Email")
+        except Exception:
+            logging.error(
+                "Jellyfin: unexpected AuthenticateByName response shape",
+                exc_info=True,
+            )
+            return False, "Could not verify your account. Please try again."
 
-        user_id = match["Id"]
         inv = Invitation.query.filter_by(code=code).first()
 
         try:
@@ -710,12 +741,15 @@ class JellyfinClient(RestApiMixin):
         try:
             if existing_row:
                 existing_row.code = code
-                existing_row.expires = expires
+                # Don't overwrite an existing account's expiry - only newly
+                # linked rows get this invite's duration, so linking a
+                # long-standing account via a time-limited invite doesn't
+                # silently convert it to expiring.
             else:
                 self._create_user_with_identity_linking(
                     {
-                        "username": match.get("Name", username),
-                        "email": match.get("Email") or None,
+                        "username": matched_name,
+                        "email": matched_email or None,
                         "token": user_id,
                         "code": code,
                         "expires": expires,

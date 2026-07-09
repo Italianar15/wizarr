@@ -74,6 +74,10 @@ class LinkExistingForm(FlaskForm):
             Regexp(USERNAME_PATTERN, message=USERNAME_ALLOWED_CHARS_MESSAGE),
         ],
     )
+    password = PasswordField(
+        "Password",
+        validators=[DataRequired(), Length(max=256)],
+    )
     code = StringField(
         "Invite Code",
         filters=[strip_filter],

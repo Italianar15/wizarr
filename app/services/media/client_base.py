@@ -539,12 +539,19 @@ class MediaClient(ABC):
 
         return success, message
 
-    def link_existing_account(self, _username: str, _code: str) -> tuple[bool, str]:
+    def link_existing_account(
+        self, _username: str, _password: str, _code: str
+    ) -> tuple[bool, str]:
         """Attach an invite's permissions to an account that already exists on
         the media server, instead of creating a brand new (possibly duplicate) one.
 
+        Implementations MUST authenticate the given username/password against
+        the media server itself before applying any invite permissions - this
+        is the only proof that the invitee actually controls the account they
+        are claiming. Never implement this as a plain username lookup.
+
         Default implementation: not supported. Override in subclasses that can
-        look an existing account up by username directly on the remote server
+        authenticate an existing account directly against the remote server
         (e.g. Jellyfin/Emby).
 
         Returns:

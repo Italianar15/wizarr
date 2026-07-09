@@ -242,16 +242,24 @@ class InvitationWorkflow(ABC):
         self,
         servers: list[MediaServer],
         username: str,
+        password: str,
         invitation_code: str,
     ) -> tuple[list[ServerResult], list[ServerResult]]:
-        """Attach the invite's permissions to an existing account on each server."""
+        """Attach the invite's permissions to an existing account on each server.
+
+        `client.link_existing_account` authenticates username+password against
+        the media server itself - this is what proves the invitee actually
+        controls the account, so the password must always be passed through.
+        """
         successful = []
         failed = []
 
         for server in servers:
             try:
                 client = get_client_for_media_server(server)
-                ok, msg = client.link_existing_account(username, invitation_code)  # type: ignore[attr-defined]
+                ok, msg = client.link_existing_account(  # type: ignore[attr-defined]
+                    username, password, invitation_code
+                )
 
                 result = ServerResult(
                     server=server, success=ok, message=msg, user_created=False
@@ -454,8 +462,9 @@ class FormBasedWorkflow(InvitationWorkflow):
             )
 
         username = form.username.data or ""
+        password = form.password.data or ""
         successful, failed = self._process_servers_link_existing(
-            servers, username, invitation.code
+            servers, username, password, invitation.code
         )
 
         if successful:

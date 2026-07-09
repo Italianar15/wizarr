@@ -83,7 +83,8 @@
           </div>
           <!-- Account Creation Form (initially hidden) -->
           <div class="h-full flex flex-col transition-all duration-500 ease-out {{ 'relative opacity-100 pointer-events-auto overflow-visible' if show_form_on_load else 'opacity-0 pointer-events-none absolute inset-0 overflow-hidden hidden' }}"
-               id="form-screen">
+               id="form-screen"
+               x-data="{ accountMode: {{ (active_mode|default('create'))|tojson }} }">
             <div class="text-center relative py-4 px-6 flex-shrink-0">
               <button id="back-btn"
                       class="absolute top-4 left-4 p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-white transition-colors duration-200">
@@ -91,8 +92,22 @@
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
                 </svg>
               </button>
-              <h2 class="text-xl md:text-2xl font-bold text-gray-900 dark:text-white mb-1">{{ _("Create Account") }}</h2>
-              <p class="text-gray-600 dark:text-gray-400 text-xs md:text-sm">{{ _("Set up your magical account") }}</p>
+              <h2 class="text-xl md:text-2xl font-bold text-gray-900 dark:text-white mb-1">
+                <span x-show="accountMode === 'create'">{{ _("Create Account") }}</span>
+                <span x-show="accountMode === 'link'">{{ _("Link Your Account") }}</span>
+              </h2>
+              <p class="text-gray-600 dark:text-gray-400 text-xs md:text-sm">
+                <span x-show="accountMode === 'create'">{{ _("Set up your magical account") }}</span>
+                <span x-show="accountMode === 'link'">{{ _("Attach this invite to your existing account") }}</span>
+              </p>
+              {% if supports_link_existing %}
+                <button type="button"
+                        @click="accountMode = accountMode === 'create' ? 'link' : 'create'"
+                        class="mt-2 text-xs text-primary hover:underline">
+                  <span x-show="accountMode === 'create'">{{ _("Already have an account? Link it instead") }}</span>
+                  <span x-show="accountMode === 'link'">{{ _("New here? Create an account instead") }}</span>
+                </button>
+              {% endif %}
             </div>
             <!-- Form container with error and form content -->
             <div class="flex-1 flex flex-col justify-center px-6 pb-4">
@@ -102,9 +117,11 @@
                 </div>
               {% endif %}
               <form class="space-y-3 md:space-y-4"
+                    x-show="accountMode === 'create'"
                     action="{{ url_for('public.process_invitation') }}"
                     method="post">
                 {{ form.hidden_tag() }}
+                <input type="hidden" name="account_mode" value="create">
                 <div class="form-field" data-field="1" style="{{ form_field_style }}">
                   <label class="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
                     <svg class="w-3 h-3 inline mr-1"
@@ -204,6 +221,39 @@
                   </span>
                 </button>
               </form>
+              {% if supports_link_existing %}
+                <form class="space-y-3 md:space-y-4"
+                      x-show="accountMode === 'link'"
+                      action="{{ url_for('public.process_invitation') }}"
+                      method="post">
+                  {{ link_form.hidden_tag() }}
+                  <input type="hidden" name="account_mode" value="link">
+                  <div class="form-field">
+                    <label class="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      <svg class="w-3 h-3 inline mr-1"
+                           fill="none"
+                           stroke="currentColor"
+                           viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z">
+                        </path>
+                      </svg>
+                      {{ _("Your existing username") }}
+                    </label>
+                    {{ link_form.username(class="w-full px-3 py-2 bg-white/80 dark:bg-gray-700/50 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent backdrop-blur-sm transition-all duration-200 text-sm",
+                                          placeholder=_("The username you already sign in with")
+                    ) }}
+                    {% for err in link_form.username.errors %}<p class="text-red-400 text-xs mt-1">{{ err }}</p>{% endfor %}
+                    <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                      {{ _("We'll grant this invite's access to your existing account instead of creating a new one.") }}
+                    </p>
+                  </div>
+                  {{ link_form.code(type="hidden") }}
+                  <button type="submit"
+                          class="w-full py-3 px-4 text-white font-semibold text-sm bg-gradient-to-r from-primary to-primary_hover hover:from-primary_hover hover:to-primary rounded-lg transition-all duration-200 transform hover:scale-[1.02] focus:ring-4 focus:ring-primary/30 focus:outline-none shadow-lg hover:shadow-xl">
+                    {{ _("Link My Account") }}
+                  </button>
+                </form>
+              {% endif %}
             </div>
           </div>
         </div>

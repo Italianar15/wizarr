@@ -66,31 +66,48 @@ def _create_join_form_template_data(
     servers: list[MediaServer],
     *,
     form=None,
+    link_form=None,
+    active_mode: str = "create",
     error: str | None = None,
 ) -> dict[str, Any]:
     """Build the complete template context for form-based invite screens."""
-    from app.forms.join import JoinForm
+    from app.forms.join import JoinForm, LinkExistingForm
     from app.services.server_name_resolver import resolve_invitation_server_name
 
     if form is None:
         form = JoinForm()
     form.code.data = invitation.code
 
+    if link_form is None:
+        link_form = LinkExistingForm()
+    link_form.code.data = invitation.code
+
     primary_server = servers[0] if servers else None
     server_type = primary_server.server_type if primary_server else "jellyfin"
     server_name = resolve_invitation_server_name(servers)
     colors = _get_server_colors(server_type)
 
+    # Only servers whose client actually supports linking an existing account
+    # (currently Jellyfin/Emby) should offer the "I already have an account" toggle.
+    supports_link_existing = any(
+        s.server_type in ("jellyfin", "emby") for s in servers
+    )
+
     context = {
         "template_name": "welcome-jellyfin.html",
         "form": form,
+        "link_form": link_form,
+        "active_mode": active_mode,
+        "supports_link_existing": supports_link_existing,
         "server_type": server_type,
         "server_name": server_name,
         "servers": servers,
         "gradient_start": colors["gradient_start"],
         "gradient_end": colors["gradient_end"],
         "shadow_color": colors["shadow_color"],
-        "show_form": bool(error) or bool(getattr(form, "errors", None)),
+        "show_form": bool(error)
+        or bool(getattr(form, "errors", None))
+        or bool(getattr(link_form, "errors", None)),
     }
     if error:
         context["error"] = error
@@ -145,49 +162,9 @@ class InvitationWorkflow(ABC):
 
                 if ok:
                     successful.append(result)
-
-                    # Mark invitation as used for this server
-                    from app.models import Invitation
-                    from app.services.invites import mark_server_used
-
-                    invitation = Invitation.query.filter_by(
-                        code=invitation_code
-                    ).first()
-                    if invitation:
-                        # Find the user that was created for this server
-                        # Flush and commit to ensure we can see the newly created user
-                        from app.extensions import db
-                        from app.models import User
-
-                        db.session.flush()
-                        db.session.commit()
-
-                        user = User.query.filter_by(
-                            username=form_data.get("username"), server_id=server.id
-                        ).first()
-
-                        # If user not found, log debug info
-                        if not user:
-                            import logging
-
-                            all_users_for_server = User.query.filter_by(
-                                server_id=server.id
-                            ).all()
-                            all_users_with_code = User.query.filter_by(
-                                code=invitation_code
-                            ).all()
-                            logging.error(
-                                f"User lookup failed for code={invitation_code}, server_id={server.id}. "
-                                f"Server has {len(all_users_for_server)} users, "
-                                f"code has {len(all_users_with_code)} users globally."
-                            )
-                        # Only set used_by for unlimited invites if not already set
-                        # For limited invites, used_by should track the single user
-                        if user and (
-                            not invitation.unlimited or not invitation.used_by
-                        ):
-                            invitation.used_by = user  # type: ignore
-                        mark_server_used(invitation, server.id, user)
+                    self._mark_invitation_used_for_server(
+                        invitation_code, server, form_data.get("username", "")
+                    )
 
                     # Invite user to connected external services (Ombi/Overseerr)
                     try:
@@ -227,6 +204,92 @@ class InvitationWorkflow(ABC):
                 )
 
         return successful, failed
+
+    def _mark_invitation_used_for_server(
+        self, invitation_code: str, server: MediaServer, username: str
+    ) -> None:
+        """Record that this invitation was consumed by `username` on `server`."""
+        from app.extensions import db
+        from app.models import Invitation, User
+        from app.services.invites import mark_server_used
+
+        invitation = Invitation.query.filter_by(code=invitation_code).first()
+        if not invitation:
+            return
+
+        # Flush and commit so the newly created/linked user is visible to the query below.
+        db.session.flush()
+        db.session.commit()
+
+        user = User.query.filter_by(username=username, server_id=server.id).first()
+
+        if not user:
+            all_users_for_server = User.query.filter_by(server_id=server.id).all()
+            all_users_with_code = User.query.filter_by(code=invitation_code).all()
+            self.logger.error(
+                f"User lookup failed for code={invitation_code}, server_id={server.id}. "
+                f"Server has {len(all_users_for_server)} users, "
+                f"code has {len(all_users_with_code)} users globally."
+            )
+
+        # Only set used_by for unlimited invites if not already set
+        # For limited invites, used_by should track the single user
+        if user and (not invitation.unlimited or not invitation.used_by):
+            invitation.used_by = user  # type: ignore
+        mark_server_used(invitation, server.id, user)
+
+    def _process_servers_link_existing(
+        self,
+        servers: list[MediaServer],
+        username: str,
+        invitation_code: str,
+    ) -> tuple[list[ServerResult], list[ServerResult]]:
+        """Attach the invite's permissions to an existing account on each server."""
+        successful = []
+        failed = []
+
+        for server in servers:
+            try:
+                client = get_client_for_media_server(server)
+                ok, msg = client.link_existing_account(username, invitation_code)  # type: ignore[attr-defined]
+
+                result = ServerResult(
+                    server=server, success=ok, message=msg, user_created=False
+                )
+
+                if ok:
+                    successful.append(result)
+                    self._mark_invitation_used_for_server(
+                        invitation_code, server, username
+                    )
+                else:
+                    failed.append(result)
+
+            except Exception as e:
+                self.logger.error(
+                    f"Failed to link existing account on server {server.name}: {e}"
+                )
+                failed.append(
+                    ServerResult(
+                        server=server,
+                        success=False,
+                        message=f"Error: {e!s}",
+                        user_created=False,
+                    )
+                )
+
+        return successful, failed
+
+    def _validate_link_existing_form(
+        self, form_data: dict[str, Any]
+    ) -> tuple[bool, Any]:
+        """Validate submitted data using the 'link existing account' form rules."""
+        from werkzeug.datastructures import MultiDict
+
+        from app.forms.join import LinkExistingForm
+
+        form = LinkExistingForm(formdata=MultiDict(form_data))
+        return form.validate(), form
 
     def _validate_join_form(
         self, form_data: dict[str, Any]
@@ -315,6 +378,11 @@ class FormBasedWorkflow(InvitationWorkflow):
         form_data: dict[str, Any],
     ) -> InvitationResult:
         """Process form submission."""
+        if form_data.get("account_mode") == "link":
+            return self._process_link_existing_submission(
+                invitation, servers, form_data
+            )
+
         form_valid, validated_data, form = self._validate_join_form(form_data)
         if not form_valid:
             return self._create_auth_error_result(
@@ -368,12 +436,42 @@ class FormBasedWorkflow(InvitationWorkflow):
             return self._create_success_result(invitation, successful, failed)
         return self._create_server_error_result(invitation, servers, failed)
 
+    def _process_link_existing_submission(
+        self,
+        invitation: Invitation,
+        servers: list[MediaServer],
+        form_data: dict[str, Any],
+    ) -> InvitationResult:
+        """Process the 'I already have an account' submission path."""
+        form_valid, form = self._validate_link_existing_form(form_data)
+        if not form_valid:
+            return self._create_auth_error_result(
+                invitation,
+                servers,
+                "Please correct the highlighted fields.",
+                link_form=form,
+                active_mode="link",
+            )
+
+        username = form.username.data or ""
+        successful, failed = self._process_servers_link_existing(
+            servers, username, invitation.code
+        )
+
+        if successful:
+            return self._create_success_result(invitation, successful, failed)
+        return self._create_server_error_result(
+            invitation, servers, failed, active_mode="link"
+        )
+
     def _create_auth_error_result(
         self,
         invitation: Invitation,
         servers: list[MediaServer],
         error_message: str,
         form: Any | None = None,
+        link_form: Any | None = None,
+        active_mode: str = "create",
     ) -> InvitationResult:
         """Create result for authentication errors."""
         return InvitationResult(
@@ -382,7 +480,12 @@ class FormBasedWorkflow(InvitationWorkflow):
             successful_servers=[],
             failed_servers=[],
             template_data=_create_join_form_template_data(
-                invitation, servers, form=form, error=error_message
+                invitation,
+                servers,
+                form=form,
+                link_form=link_form,
+                active_mode=active_mode,
+                error=error_message,
             ),
             session_data={"invitation_in_progress": True},
         )
@@ -392,6 +495,7 @@ class FormBasedWorkflow(InvitationWorkflow):
         invitation: Invitation,
         servers: list[MediaServer],
         failed: list[ServerResult],
+        active_mode: str = "create",
     ) -> InvitationResult:
         """Create result for server failures."""
         error_messages = [
@@ -405,7 +509,7 @@ class FormBasedWorkflow(InvitationWorkflow):
             successful_servers=[],
             failed_servers=failed,
             template_data=_create_join_form_template_data(
-                invitation, servers, error=error_text
+                invitation, servers, active_mode=active_mode, error=error_text
             ),
             session_data={"invitation_in_progress": True},
         )

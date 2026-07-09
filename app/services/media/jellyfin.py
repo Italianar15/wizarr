@@ -624,6 +624,112 @@ class JellyfinClient(RestApiMixin):
             db.session.rollback()
             return False, "An unexpected error occurred."
 
+    def link_existing_account(self, username: str, code: str) -> tuple[bool, str]:
+        """Attach this invitation's permissions to an account that already
+        exists on the media server, instead of creating a duplicate one.
+
+        Looks the username up directly against the server's own user list
+        (not just Wizarr's database), so an invitee who already has an
+        account predating Wizarr can be granted this invite's library
+        access without a second, duplicate account being created.
+        """
+        ok, msg = is_invite_valid(code)
+        if not ok:
+            return False, msg
+
+        server_id = getattr(self, "server_id", None)
+
+        try:
+            remote_users = self.get("/Users").json()
+        except Exception:
+            logging.error("Jellyfin: failed to list users for account linking", exc_info=True)
+            return False, "Could not reach the media server to look up your account."
+
+        needle = username.strip().lower()
+        match = next(
+            (u for u in remote_users if (u.get("Name") or "").lower() == needle),
+            None,
+        )
+        if not match:
+            return False, f"No account named '{username}' was found on this server."
+
+        user_id = match["Id"]
+        inv = Invitation.query.filter_by(code=code).first()
+
+        try:
+            if inv and inv.libraries:
+                sections = [
+                    lib.external_id
+                    for lib in inv.libraries
+                    if lib.server_id == server_id
+                ]
+            else:
+                sections = [
+                    lib.external_id
+                    for lib in Library.query.filter_by(
+                        enabled=True, server_id=server_id
+                    ).all()
+                ]
+            self._set_specific_folders(user_id, sections)
+
+            allow_downloads = bool(getattr(inv, "allow_downloads", False))
+            allow_live_tv = bool(getattr(inv, "allow_live_tv", False))
+            if server_id:
+                from app.models import MediaServer
+
+                current_server = db.session.get(MediaServer, server_id)
+                if current_server:
+                    if not allow_downloads:
+                        allow_downloads = bool(
+                            getattr(current_server, "allow_downloads", False)
+                        )
+                    if not allow_live_tv:
+                        allow_live_tv = bool(
+                            getattr(current_server, "allow_live_tv", False)
+                        )
+
+            current_policy = self.get(f"/Users/{user_id}").json().get("Policy", {})
+            current_policy["EnableContentDownloading"] = allow_downloads
+            current_policy["EnableLiveTvAccess"] = allow_live_tv
+            max_sessions = getattr(inv, "max_active_sessions", None)
+            if max_sessions is not None:
+                current_policy["MaxActiveSessions"] = max_sessions
+            self.set_policy(user_id, current_policy)
+        except Exception:
+            logging.error(
+                "Jellyfin: failed to apply invite permissions while linking existing user",
+                exc_info=True,
+            )
+            # Don't fail the link for this - the account is still linked below.
+
+        from app.services.expiry import calculate_user_expiry
+
+        expires = calculate_user_expiry(inv, server_id) if inv else None
+
+        existing_row = User.query.filter_by(token=user_id, server_id=server_id).first()
+        try:
+            if existing_row:
+                existing_row.code = code
+                existing_row.expires = expires
+            else:
+                self._create_user_with_identity_linking(
+                    {
+                        "username": match.get("Name", username),
+                        "email": match.get("Email") or None,
+                        "token": user_id,
+                        "code": code,
+                        "expires": expires,
+                        "server_id": server_id,
+                    }
+                )
+            db.session.commit()
+        except Exception:
+            logging.error("Jellyfin: failed to save linked user record", exc_info=True)
+            db.session.rollback()
+            return False, "An unexpected error occurred."
+
+        return True, ""
+
     def _get_artwork_urls(
         self, item_id: str, media_type: str = "", series_id: str | None = None
     ) -> dict[str, str | None]:

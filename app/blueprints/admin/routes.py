@@ -690,6 +690,50 @@ def update_user_permissions(db_id: int):
         return Response(f"Failed to update permissions: {exc!s}", status=500)
 
 
+@admin_bp.route("/user/<int:db_id>/resend-connect", methods=["POST"])
+@login_required
+def resend_emby_connect(db_id: int):
+    """Re-send the Emby Connect link invite for a user.
+
+    ``link_emby_connect`` only ever fires once, at the moment an invite is
+    accepted (see ``EmbyClient.join``). If the account didn't exist on Emby
+    Connect yet, or the invite expired unaccepted, there was previously no
+    way to retry it short of re-inviting the user.
+    """
+    from app.services.media.service import get_client_for_media_server
+
+    user = db.get_or_404(User, db_id)
+
+    if not user.server or user.server.server_type != "emby":
+        return Response(_("Emby Connect is only available for Emby servers."), status=400)
+
+    email = (user.email or "").strip()
+    if not email or email.lower() == "empty" or not EMAIL_RE.fullmatch(email):
+        return Response(
+            _("Set a valid email for this user first (see Contact Email above)."),
+            status=400,
+        )
+
+    try:
+        client = get_client_for_media_server(user.server)
+        sent = client.link_emby_connect(user.token, email)  # type: ignore[attr-defined]
+    except Exception as exc:
+        logging.error(f"Failed to resend Emby Connect invite for user {db_id}: {exc}")
+        return Response(_("Failed to contact the Emby server."), status=500)
+
+    if not sent:
+        return Response(
+            _(
+                "Emby rejected the request. Make sure %(email)s is a real, "
+                "registered Emby Connect account.",
+                email=email,
+            ),
+            status=400,
+        )
+
+    return Response(_("Connect invite sent. Ask the user to check their email/app and accept it."))
+
+
 @admin_bp.route("/user/<int:db_id>/libraries", methods=["POST"])
 @login_required
 def update_user_libraries(db_id: int):

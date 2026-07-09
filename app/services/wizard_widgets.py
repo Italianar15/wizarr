@@ -33,7 +33,7 @@ class WizardWidget:
     def render(self, server_type: str, _context: dict | None = None, **kwargs) -> str:
         """Render the widget with given parameters."""
         try:
-            data = self.get_data(server_type, **kwargs)
+            data = self.get_data(server_type, _context=_context or {}, **kwargs)
             html_content = render_template_string(self.template, **data)
             # Wrap in markdown HTML block to ensure it's treated as raw HTML
             return f'\n\n<div class="widget-container">\n{html_content}\n</div>\n\n'
@@ -289,10 +289,176 @@ class ButtonWidget(WizardWidget):
             return f'\n\n<div class="text-sm text-gray-500 italic">Button widget error: {e}</div>\n\n'
 
 
+class ServerAddressWidget(WizardWidget):
+    """Widget showing the address a user should enter to connect, with a copy button."""
+
+    def __init__(self):
+        template = """
+        <div class="server-address-widget my-4">
+            {% if address %}
+            <div class="flex items-center gap-2 bg-gray-50 dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-700 px-4 py-3">
+                <code class="flex-1 text-sm sm:text-base font-mono text-gray-900 dark:text-white break-all">{{ address }}</code>
+                <button type="button"
+                        onclick="navigator.clipboard.writeText('{{ address }}').then(() => { this.textContent = {{ _('Copied!')|tojson }}; setTimeout(() => { this.textContent = {{ _('Copy')|tojson }}; }, 1500); });"
+                        class="flex-shrink-0 px-3 py-1.5 text-xs font-medium text-white bg-primary rounded-md hover:bg-primary-hover transition-colors">
+                    {{ _("Copy") }}
+                </button>
+            </div>
+            {% else %}
+            <p class="text-sm text-gray-500 dark:text-gray-400 italic">{{ _("Server address not configured yet.") }}</p>
+            {% endif %}
+        </div>
+        """
+        super().__init__("server_address", template)
+
+    def get_data(
+        self, _server_type: str, _context: dict | None = None, **_kwargs
+    ) -> dict[str, Any]:
+        return {"address": _resolve_server_address(_server_type, _context)}
+
+
+class QrConnectWidget(WizardWidget):
+    """Widget rendering a scannable QR code for the server address (client-side)."""
+
+    _counter = 0
+
+    def __init__(self):
+        template = """
+        <div class="qr-connect-widget my-4 flex flex-col items-center gap-2">
+            {% if address %}
+            <div id="{{ target_id }}" class="bg-white p-3 rounded-lg shadow-md inline-block w-40 h-40 sm:w-48 sm:h-48"></div>
+            <p class="text-xs text-gray-500 dark:text-gray-400">{{ _("Scan with your phone's camera") }}</p>
+            <script src="{{ url_for('static', filename='js/vendor/qrcode.min.js') }}"></script>
+            <script>
+            (function() {
+                var el = document.getElementById({{ target_id|tojson }});
+                if (!el || typeof qrcode === "undefined") { return; }
+                try {
+                    var qr = qrcode(0, "M");
+                    qr.addData({{ address|tojson }});
+                    qr.make();
+                    el.innerHTML = qr.createSvgTag(4, 4);
+                } catch (e) {
+                    el.remove();
+                }
+            })();
+            </script>
+            {% else %}
+            <p class="text-sm text-gray-500 dark:text-gray-400 italic">{{ _("Server address not configured yet.") }}</p>
+            {% endif %}
+        </div>
+        """
+        super().__init__("qr_connect", template)
+
+    def get_data(
+        self, _server_type: str, _context: dict | None = None, **_kwargs
+    ) -> dict[str, Any]:
+        QrConnectWidget._counter += 1
+        return {
+            "address": _resolve_server_address(_server_type, _context),
+            "target_id": f"qr-connect-{QrConnectWidget._counter}",
+        }
+
+
+class AppStoreLinksWidget(WizardWidget):
+    """Widget showing official app download links for common Emby-client platforms."""
+
+    _LINKS = [
+        {
+            "label": "iPhone & iPad",
+            "icon": "📱",
+            "url": "https://apps.apple.com/us/app/emby/id992180193",
+        },
+        {
+            "label": "Android Phone & Tablet",
+            "icon": "📱",
+            "url": "https://play.google.com/store/apps/details?id=com.mb.android",
+        },
+        {
+            "label": "Apple TV",
+            "icon": "📺",
+            "url": "https://apps.apple.com/us/app/emby-for-tv/id1087133526",
+        },
+        {
+            "label": "Android TV",
+            "icon": "📺",
+            "url": "https://play.google.com/store/apps/details?id=tv.emby.embyatv",
+        },
+        {
+            "label": "Fire TV",
+            "icon": "🔥",
+            "url": "https://emby.media/emby-for-fire-tv.html",
+        },
+        {
+            "label": "Roku",
+            "icon": "📺",
+            "url": "https://emby.media/emby-for-roku.html",
+        },
+    ]
+
+    def __init__(self):
+        template = """
+        <div class="app-store-links-widget my-4 grid grid-cols-2 sm:grid-cols-3 gap-2">
+            {% for link in links %}
+            <a href="{{ link.url }}" target="_blank" rel="noopener noreferrer"
+               class="flex flex-col items-center gap-1 px-3 py-3 bg-gray-50 dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-700 hover:border-primary transition-colors text-center no-underline">
+                <span class="text-2xl">{{ link.icon }}</span>
+                <span class="text-xs font-medium text-gray-700 dark:text-gray-300">{{ link.label }}</span>
+            </a>
+            {% endfor %}
+            {% if web_url %}
+            <a href="{{ web_url }}" target="_blank" rel="noopener noreferrer"
+               class="flex flex-col items-center gap-1 px-3 py-3 bg-gray-50 dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-700 hover:border-primary transition-colors text-center no-underline">
+                <span class="text-2xl">🌐</span>
+                <span class="text-xs font-medium text-gray-700 dark:text-gray-300">{{ _("Web Browser") }}</span>
+            </a>
+            {% endif %}
+        </div>
+        """
+        super().__init__("app_store_links", template)
+
+    def get_data(
+        self, _server_type: str, _context: dict | None = None, **_kwargs
+    ) -> dict[str, Any]:
+        return {
+            "links": self._LINKS,
+            "web_url": _resolve_server_address(_server_type, _context),
+        }
+
+
+def _resolve_server_address(server_type: str, context: dict | None) -> str:
+    """Return the address users should connect to.
+
+    Prefers the invitation-aware ``external_url`` already resolved into the
+    wizard render context (matches the pattern used by ``ButtonWidget``'s
+    ``url="external_url"`` lookups), falling back to a direct DB query so the
+    widget still degrades gracefully outside a wizard-step render.
+    """
+    if context:
+        address = context.get("external_url") or context.get("server_url")
+        if address:
+            return address
+
+    try:
+        from app.models import MediaServer
+
+        server = MediaServer.query.filter_by(server_type=server_type).first()
+        if not server:
+            server = MediaServer.query.first()
+        if not server:
+            return ""
+        return server.external_url or server.url or ""
+    except Exception:
+        return ""
+
+
 # Widget registry
 WIDGET_REGISTRY = {
     "recently_added_media": RecentlyAddedMediaWidget(),
     "button": ButtonWidget(),
+    "server_address": ServerAddressWidget(),
+    "qr_connect": QrConnectWidget(),
+    "app_store_links": AppStoreLinksWidget(),
 }
 
 

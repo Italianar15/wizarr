@@ -55,3 +55,28 @@ class JoinForm(FlaskForm):
         validators=[DataRequired(), Length(min=6, max=10)],
         render_kw={"minlength": 6, "maxlength": 10},
     )
+
+
+class LinkExistingForm(FlaskForm):
+    """Attach an invite's permissions to an account that already exists on the
+    media server, instead of creating a brand new (possibly duplicate) one."""
+
+    username = StringField(
+        "Username",
+        filters=[strip_filter],
+        validators=[
+            DataRequired(),
+            Length(
+                min=USERNAME_MIN_LENGTH,
+                max=USERNAME_MAX_LENGTH,
+                message=USERNAME_LENGTH_MESSAGE,
+            ),
+            Regexp(USERNAME_PATTERN, message=USERNAME_ALLOWED_CHARS_MESSAGE),
+        ],
+    )
+    code = StringField(
+        "Invite Code",
+        filters=[strip_filter],
+        validators=[DataRequired(), Length(min=6, max=10)],
+        render_kw={"minlength": 6, "maxlength": 10},
+    )

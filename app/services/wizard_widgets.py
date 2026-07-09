@@ -299,7 +299,7 @@ class ServerAddressWidget(WizardWidget):
             <div class="flex items-center gap-2 bg-gray-50 dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-700 px-4 py-3">
                 <code class="flex-1 text-sm sm:text-base font-mono text-gray-900 dark:text-white break-all">{{ address }}</code>
                 <button type="button"
-                        onclick="navigator.clipboard.writeText('{{ address }}').then(() => { this.textContent = {{ _('Copied!')|tojson }}; setTimeout(() => { this.textContent = {{ _('Copy')|tojson }}; }, 1500); });"
+                        onclick='navigator.clipboard.writeText({{ address|tojson }}).then(() => { this.textContent = {{ _("Copied!")|tojson }}; setTimeout(() => { this.textContent = {{ _("Copy")|tojson }}; }, 1500); });'
                         class="flex-shrink-0 px-3 py-1.5 text-xs font-medium text-white bg-primary rounded-md hover:bg-primary-hover transition-colors">
                     {{ _("Copy") }}
                 </button>

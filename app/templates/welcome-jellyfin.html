@@ -84,7 +84,7 @@
           <!-- Account Creation Form (initially hidden) -->
           <div class="h-full flex flex-col transition-all duration-500 ease-out {{ 'relative opacity-100 pointer-events-auto overflow-visible' if show_form_on_load else 'opacity-0 pointer-events-none absolute inset-0 overflow-hidden hidden' }}"
                id="form-screen"
-               x-data="{ accountMode: {{ (active_mode|default('create'))|tojson }} }">
+               x-data='{ accountMode: {{ (active_mode|default("create"))|tojson }} }'>
             <div class="text-center relative py-4 px-6 flex-shrink-0">
               <button id="back-btn"
                       class="absolute top-4 left-4 p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-white transition-colors duration-200">

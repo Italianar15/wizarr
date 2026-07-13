@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-07-12 06:12+0000\n"
+"POT-Creation-Date: 2026-07-13 06:29+0000\n"
 "PO-Revision-Date: 2026-07-13 06:29+0000\n"
 "Last-Translator: Václav Štěpáník <stepanikvaclav@gmail.com>\n"
 "Language-Team: Czech <https://hosted.weblate.org/projects/wizarr/wizarr-"
@@ -111,7 +111,8 @@ msgid "Unknown error"
 msgstr "Neznámá chyba"
 
 msgid "Cannot remove a job that is still queued or running."
-msgstr "Úlohu, která je stále ve frontě nebo se právě provádí, nelze odstranit."
+msgstr ""
+"Úlohu, která je stále ve frontě nebo se právě provádí, nelze odstranit."
 
 msgid "An internal error has occurred."
 msgstr "Došlo k interní chybě."
@@ -519,15 +520,16 @@ msgstr ""
 #, python-format
 msgid ""
 "An error occurred while connecting to the %(server_type)s server: %(error)s"
-msgstr "Při připojování k serveru typu %(server_type)s došlo k chybě: %(error)s"
+msgstr ""
+"Při připojování k serveru typu %(server_type)s došlo k chybě: %(error)s"
 
 #, python-format
 msgid ""
 "An unexpected error occurred while connecting to the %(server_type)s server: "
 "%(error)s"
 msgstr ""
-"Při připojování k serveru typu %(server_type)s došlo k neočekávané chybě: %"
-"(error)s"
+"Při připojování k serveru typu %(server_type)s došlo k neočekávané chybě: "
+"%(error)s"
 
 #, fuzzy
 msgid "Plex"
